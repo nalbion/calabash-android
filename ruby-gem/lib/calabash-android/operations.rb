@@ -7,12 +7,35 @@ require 'socket'
 require 'timeout'
 require 'calabash-android/helpers'
 require 'retriable'
+require 'cucumber/cli/options'
 
+# --format calabash-emma
+Cucumber::Cli::Options::BUILTIN_FORMATS['calabash-emma'] = ['Calabash::Android::EmmaCoverageFormatter', 'Emma coverage report']
 
 module Calabash module Android
+  
+# Untested!
+# --format Calabash::Android::EmmaCoverageFormatter
+class EmmaCoverageFormatter
+  def initialize(step_mother, io, options)
+    @emmaMetaFile = options['meta'] || 'target/emma/coverage.em'
+    @emmaJar = ENV['EMMA_JAR'] 
+    @sourceDir = 'src'
+    ENV['COVERAGE'] = 'emma'
+  end
+  
+  def after_feature(keyword, step_match, status, source_indent, background)
+    Device.default_device.merge_coverage_data_file
+  end 
+  
+  def after_features(keyword, step_match, status, source_indent, background)
+    # Generate the code coverage report
+    `java -cp #{@emmaJar} emma report -r html -in #{@emmaMetaFile},coverage.ec -sp #{@sourceDir}`
+    File.delete('coverage.ec')
+  end
+end
 
 module Operations
-
 
   def log(message)
     $stdout.puts "#{Time.now.strftime("%Y-%m-%d %H:%M:%S")} - #{message}" if (ARGV.include? "-v" or ARGV.include? "--verbose")
