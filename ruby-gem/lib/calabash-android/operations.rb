@@ -41,8 +41,13 @@ module Operations
   def install_app(app_path)
     Device.default_device.install_app(app_path)
   end
+  
+  def merge_coverage_data_file
+    Device.default_device.merge_coverage_data_file
+  end
 
   def uninstall_apps
+    merge_coverage_data_file
     Device.default_device.uninstall_app(ENV["TEST_PACKAGE_NAME"])
     Device.default_device.uninstall_app(ENV["PACKAGE_NAME"])
   end
@@ -145,6 +150,30 @@ module Operations
       log "Uninstalling: #{package_name}"
       log `#{adb_command} uninstall #{package_name}`
     end
+    
+    def merge_coverage_data_file
+      if ENV['COVERAGE'] == 'emma'        
+        log "#{adb_command} pull /data/data/#{package_name(@app_path)}/files/coverage.ec feature_coverage.ec"
+        `#{adb_command} pull /data/data/#{package_name(@app_path)}/files/coverage.ec feature_coverage.ec`
+        
+        if File.exists?('feature_coverage.ec')
+          if File.exists?('coverage.ec')
+            log 'Merging feature_coverage.ec into coverage.ec'
+            `java -cp #{ENV['EMMA_JAR']} emma merge -in feature_coverage.ec -out coverage.ec`
+            # Now clear the coverage.ec file on the device
+            #File.truncate('feature_coverage.ec', 0)
+            File.new('feature_coverage.ec', File::TRUNC)
+          else
+            log 'Copying feature_coverage.ec as coverage.ec' 
+            FileUtils.cp('feature_coverage.ec', 'coverage.ec')
+          end
+          
+          log 'Resetting coverage.ec on device'
+          `#{adb_command} push feature_coverage.ec /data/data/#{package_name(@app_path)}/files/coverage.ec`
+          File.delete('feature_coverage.ec')
+        end
+      end
+    end
 
     def shutdown_test_server
       http("/kill")
@@ -227,8 +256,9 @@ module Operations
     end
 
     def start_test_server_in_background
-      test_server_package = package_name(@test_server_path)
-      cmd = "#{adb_command} shell am instrument -w -e class sh.calaba.instrumentationbackend.InstrumentationBackend #{test_server_package}/sh.calaba.instrumentationbackend.CalabashInstrumentationTestRunner"
+      test_server_package = package_name(@test_server_path)      
+      coverage_cmd = ENV['COVERAGE'] == 'emma' ? '-e coverage true' : ''
+      cmd = "#{adb_command} shell am instrument -w #{coverage_cmd} -e class sh.calaba.instrumentationbackend.InstrumentationBackend #{test_server_package}/sh.calaba.instrumentationbackend.CalabashInstrumentationTestRunner"
       log "Starting test server using:"
       log cmd
       if is_windows?

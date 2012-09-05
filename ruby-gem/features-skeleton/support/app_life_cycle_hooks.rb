@@ -18,3 +18,7 @@ end
 After do
     shutdown_test_server
 end
+
+at_exit do
+  merge_coverage_data_file
+end
